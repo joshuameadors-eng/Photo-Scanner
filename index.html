@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Serial Scanner</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+
+        <!-- Header -->
+        <header>
+            <h1>📷 Serial Scanner</h1>
+            <p>Scan serial numbers to the shared CSV</p>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="top-nav">
+            <a href="index.html" class="active">Scanner</a>
+            <a href="view.html">View CSV</a>
+        </nav>
+
+        <!-- Capture Card -->
+        <div class="card">
+            <h2>📸 Capture Serial Number</h2>
+            <div class="capture-area">
+                <label class="capture-btn" for="file-input">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                        <circle cx="12" cy="13" r="4"/>
+                    </svg>
+                    Tap to Take Photo
+                </label>
+                <input type="file" id="file-input" accept="image/*" capture="environment">
+
+                <!-- Image Preview -->
+                <div class="preview-wrapper" id="preview-wrapper">
+                    <img id="preview-img" src="" alt="Captured image">
+                </div>
+
+                <!-- OCR Progress -->
+                <div class="progress-section" id="progress-section">
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="progress-bar"></div>
+                    </div>
+                    <p class="progress-label" id="progress-label">Initializing OCR…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Result Card -->
+        <div class="card result-section" id="result-section">
+            <h2>🔍 Detected Serial Number</h2>
+            <div class="detected-serial" id="detected-serial"></div>
+
+            <!-- Low Confidence Warning -->
+            <div class="alert alert-warning" id="alert-low-confidence">
+                <span class="alert-icon">⚠️</span>
+                <span>Low confidence read. Please verify or manually enter the serial number below.</span>
+            </div>
+
+            <!-- Unreadable Warning -->
+            <div class="alert alert-danger" id="alert-unreadable">
+                <span class="alert-icon">❌</span>
+                <span>Unable to read the serial number. Please enter it manually below.</span>
+            </div>
+
+            <!-- Success Alert -->
+            <div class="alert alert-success" id="alert-success">
+                <span class="alert-icon">✅</span>
+                <span id="alert-success-text">Serial number saved successfully!</span>
+            </div>
+
+            <!-- Manual Override -->
+            <div class="override-section" id="override-section">
+                <label for="override-input">Manual Entry / Override</label>
+                <input type="text" class="override-input" id="override-input" placeholder="Type serial number here…" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="btn-group" id="action-buttons">
+                <button class="btn btn-success" id="btn-save" disabled>
+                    Save to CSV
+                </button>
+                <button class="btn btn-outline" id="btn-reset">
+                    Scan Again
+                </button>
+            </div>
+        </div>
+
+        <!-- Recent Scans Card -->
+        <div class="card">
+            <h2>📋 Recent Scans (This Session)</h2>
+            <ul class="recent-list" id="recent-list">
+                <li class="empty-state">No scans yet. Capture a serial number above.</li>
+            </ul>
+        </div>
+
+    </div>
+
+    <!-- Duplicate Warning Modal -->
+    <div class="modal-overlay" id="duplicate-modal">
+        <div class="modal">
+            <div class="modal-icon">⚠️</div>
+            <h3>Duplicate Detected</h3>
+            <p>
+                The serial number <span class="serial-highlight" id="modal-serial"></span> already exists in the CSV.<br>
+                Do you want to add it again?
+            </p>
+            <div class="btn-group">
+                <button class="btn btn-danger" id="modal-btn-duplicate">Add Anyway</button>
+                <button class="btn btn-outline" id="modal-btn-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tesseract.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- App Logic -->
+    <script src="js/app.js"></script>
+</body>
+</html>

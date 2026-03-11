@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Serial Scanner — CSV Viewer</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+
+        <!-- Header -->
+        <header>
+            <h1>📋 CSV Viewer</h1>
+            <p>Shared live view of scanned serial numbers</p>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="top-nav">
+            <a href="index.html">Scanner</a>
+            <a href="view.html" class="active">View CSV</a>
+        </nav>
+
+        <!-- Viewer Card -->
+        <div class="card">
+            <div class="viewer-header">
+                <h2 id="entry-count">0 Entries</h2>
+                <span class="badge badge-live">Live</span>
+            </div>
+
+            <div id="table-container">
+                <p class="empty-state" id="empty-state">No serial numbers recorded yet.</p>
+                <table class="csv-table" id="csv-table" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th class="col-row">#</th>
+                            <th>Serial Number</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="csv-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Download Button -->
+        <button class="btn btn-primary download-btn" id="btn-download" style="display:none;">
+            ⬇️ Download CSV
+        </button>
+
+    </div>
+
+    <script src="js/view.js"></script>
+</body>
+</html>
