@@ -20,6 +20,8 @@
     const CONFIDENCE_LOW    = 60;    // Below → warning, still allow save
     const MIN_SERIAL_LEN    = 3;     // Minimum alphanumeric chars to count as valid
     const STABLE_HITS       = 2;     // How many identical reads before we accept
+    const RETRY_INTERVAL    = 5000;  // ms between retries for failed saves
+    const MAX_RETRIES       = 3;     // Max retry attempts per failed serial
 
     // ─── DOM References ─────────────────────────────────────
     const video             = document.getElementById('camera-video');
@@ -68,6 +70,8 @@
     let lastDetected   = '';
     let stableCount    = 0;
     let isDuplicate    = false;
+    let retryTimer     = null;
+    let autoSaving     = false;
 
     // ─── Helpers ────────────────────────────────────────────
 
@@ -126,6 +130,39 @@
         const result = bestLine || rawText.trim();
         const cleanLen = result.replace(/[^a-zA-Z0-9]/g, '').length;
         return { text: result, isValid: cleanLen >= MIN_SERIAL_LEN };
+    }
+
+    // --- Retry Queue (LocalStorage) -------------------------
+
+    function getRetryQueue() {
+        try {
+            const queue = JSON.parse(localStorage.getItem('retryQueue') || '[]');
+            return Array.isArray(queue) ? queue : [];
+        } catch (e) {
+            console.error('Failed to parse retry queue from localStorage', e);
+            return [];
+        }
+    }
+
+    function saveRetryQueue(queue) {
+        localStorage.setItem('retryQueue', JSON.stringify(queue));
+    }
+
+    function addSerialToRetryQueue(serial) {
+        const queue = getRetryQueue();
+        const existing = queue.find(item => item.serial === serial);
+        if (existing) {
+            existing.retries = (existing.retries || 0) + 1;
+            existing.lastAttempt = Date.now();
+        } else {
+            queue.push({ serial, retries: 0, lastAttempt: Date.now() });
+        }
+        saveRetryQueue(queue);
+    }
+
+    function removeSerialFromRetryQueue(serial) {
+        const queue = getRetryQueue().filter(item => item.serial !== serial);
+        saveRetryQueue(queue);
     }
 
     // ─── Theme Toggle ───────────────────────────────────────
@@ -323,11 +360,18 @@
         isDuplicate = await checkDuplicate(serial);
 
         if (isDuplicate) {
+            // Keep existing behavior: block duplicate auto-save by default and ask user
             showFlex(alertDupeInline);
+            restoreActionButtons();
+            const saveBtn = actionButtons.querySelector('#btn-save') || actionButtons.querySelector('.btn-success');
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = 'Save to CSV';
+            }
+            return;
         }
 
-        // Confidence evaluation — fixed logic:
-        // If we have valid text, always allow saving. Only warn, never block.
+        // Confidence evaluation — valid text should still autosave
         if (confidence < CONFIDENCE_LOW) {
             showFlex(alertLowConf);
             show(overrideSection);
@@ -336,11 +380,15 @@
             hide(overrideSection);
         }
 
-        btnSave.disabled = false;
-        btnSave.innerHTML = 'Save to CSV';
-
         // Restore action buttons if they were replaced by "Scan Another"
         restoreActionButtons();
+
+        // Autosave for non-duplicates
+        if (!autoSaving) {
+            autoSaving = true;
+            await handleSave();
+            autoSaving = false;
+        }
     }
 
     function restoreActionButtons() {
@@ -396,12 +444,60 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ serial }),
             });
-            const json = await resp.json();
-            return json.success === true;
+
+            let json = {};
+            try {
+                json = await resp.json();
+            } catch (e) {
+                json = { error: 'Invalid JSON response from server' };
+            }
+
+            if (!resp.ok || json.success !== true) {
+                return {
+                    success: false,
+                    error: json.error || `HTTP ${resp.status}`,
+                    debug: json.debug || null,
+                };
+            }
+
+            return {
+                success: true,
+                timestamp: json.timestamp || null,
+            };
         } catch (err) {
             console.error('Save failed:', err);
-            return false;
+            return {
+                success: false,
+                error: err.message || 'Network request failed',
+                debug: null,
+            };
         }
+    }
+
+    async function processRetryQueue() {
+        const queue = getRetryQueue();
+        if (!queue.length) return;
+
+        const remaining = [];
+
+        for (const item of queue) {
+            if ((item.retries || 0) >= MAX_RETRIES) {
+                continue; // drop permanently after max retries
+            }
+
+            const result = await saveSerial(item.serial);
+            if (result.success) {
+                removeSerialFromRetryQueue(item.serial);
+            } else {
+                remaining.push({
+                    serial: item.serial,
+                    retries: (item.retries || 0) + 1,
+                    lastAttempt: Date.now(),
+                });
+            }
+        }
+
+        saveRetryQueue(remaining);
     }
 
     // ─── Save Flow ──────────────────────────────────────────
@@ -442,9 +538,10 @@
             saveBtn.innerHTML = '<span class="spinner"></span> Saving…';
         }
 
-        const success = await saveSerial(serial);
+        const result = await saveSerial(serial);
 
-        if (success) {
+        if (result.success) {
+            removeSerialFromRetryQueue(serial);
             hideAllAlerts();
             hide(overrideSection);
             alertSuccessText.textContent = `"${serial}" saved to CSV!`;
@@ -459,12 +556,16 @@
             againBtn.addEventListener('click', resetAndResume);
             actionButtons.appendChild(againBtn);
         } else {
+            addSerialToRetryQueue(serial);
             if (saveBtn) {
                 saveBtn.innerHTML = 'Save to CSV';
                 saveBtn.disabled = false;
             }
             const span = alertUnreadable.querySelector('span:last-child');
-            if (span) span.textContent = 'Failed to save. Please try again.';
+            if (span) {
+                const debugText = result.debug ? ` | Debug: ${JSON.stringify(result.debug)}` : '';
+                span.textContent = `Failed to save. Queued for retry. Error: ${result.error || 'Unknown error'}${debugText}`;
+            }
             showFlex(alertUnreadable);
         }
     }
@@ -581,11 +682,22 @@
         const workerReady = await initWorker();
         if (!workerReady) return;
 
+        // Process any previously failed saves immediately, then periodically
+        await processRetryQueue();
+        retryTimer = setInterval(processRetryQueue, RETRY_INTERVAL);
+
         const cameraReady = await startCamera();
         if (cameraReady) {
             startScanLoop();
         }
     }
+
+    // Best-effort cleanup
+    window.addEventListener('beforeunload', () => {
+        if (retryTimer) clearInterval(retryTimer);
+        stopScanLoop();
+        stopCamera();
+    });
 
     init();
 

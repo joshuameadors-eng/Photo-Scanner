@@ -65,22 +65,72 @@ function serialExists(string $serial): bool {
 
 /**
  * Append a serial number to the CSV with file locking.
+ * Returns ['success' => bool, 'error' => string|null, 'timestamp' => string|null]
  */
-function appendSerial(string $serial): bool {
+function appendSerial(string $serial): array {
     $timestamp = date('Y-m-d H:i:s');
+    $dir = dirname(CSV_FILE);
+
+    if (!is_dir($dir)) {
+        return [
+            'success' => false,
+            'error' => 'Data directory does not exist: ' . $dir,
+            'timestamp' => null,
+        ];
+    }
+
+    if (!is_writable($dir)) {
+        return [
+            'success' => false,
+            'error' => 'Data directory is not writable: ' . $dir,
+            'timestamp' => null,
+        ];
+    }
+
+    if (file_exists(CSV_FILE) && !is_writable(CSV_FILE)) {
+        return [
+            'success' => false,
+            'error' => 'CSV file is not writable: ' . CSV_FILE,
+            'timestamp' => null,
+        ];
+    }
+
     $fp = fopen(CSV_FILE, 'a');
     if ($fp === false) {
-        return false;
+        return [
+            'success' => false,
+            'error' => 'Failed to open CSV file for appending: ' . CSV_FILE,
+            'timestamp' => null,
+        ];
     }
-    if (flock($fp, LOCK_EX)) {
-        fputcsv($fp, [$serial, $timestamp]);
-        fflush($fp);
-        flock($fp, LOCK_UN);
+
+    if (!flock($fp, LOCK_EX)) {
         fclose($fp);
-        return true;
+        return [
+            'success' => false,
+            'error' => 'Failed to acquire file lock for CSV write',
+            'timestamp' => null,
+        ];
     }
+
+    $writeOk = fputcsv($fp, [$serial, $timestamp]);
+    fflush($fp);
+    flock($fp, LOCK_UN);
     fclose($fp);
-    return false;
+
+    if ($writeOk === false) {
+        return [
+            'success' => false,
+            'error' => 'Failed to write CSV row',
+            'timestamp' => null,
+        ];
+    }
+
+    return [
+        'success' => true,
+        'error' => null,
+        'timestamp' => $timestamp,
+    ];
 }
 
 // ─── Routing ───────────────────────────────────────────────
@@ -139,15 +189,27 @@ if ($method === 'POST') {
     }
 
     // Append
-    if (appendSerial($serial)) {
+    $append = appendSerial($serial);
+
+    if ($append['success'] === true) {
         echo json_encode([
             'success'   => true,
             'serial'    => $serial,
-            'timestamp' => date('Y-m-d H:i:s'),
+            'timestamp' => $append['timestamp'],
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to write to CSV']);
+        echo json_encode([
+            'success' => false,
+            'error'   => $append['error'] ?? 'Failed to write to CSV',
+            'debug'   => [
+                'csv_path' => CSV_FILE,
+                'csv_exists' => file_exists(CSV_FILE),
+                'csv_writable' => file_exists(CSV_FILE) ? is_writable(CSV_FILE) : null,
+                'dir_path' => dirname(CSV_FILE),
+                'dir_writable' => is_writable(dirname(CSV_FILE)),
+            ],
+        ]);
     }
     exit;
 }
