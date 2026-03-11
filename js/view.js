@@ -1,34 +1,37 @@
 /**
- * Serial Scanner – Live CSV Viewer
- * 
- * Polls the API every 3 seconds for the latest CSV data
- * and renders it in a responsive table. Supports CSV download.
+ * Serial Scanner – Local CSV Viewer
  */
 
 (function () {
     'use strict';
 
-    // ─── Configuration ──────────────────────────────────────
-    const API_URL       = 'api.php';
-    const POLL_INTERVAL = 3000; // milliseconds
+    const STORAGE_KEY   = 'scannedSerials';
+    const POLL_INTERVAL = 3000;
 
-    // ─── DOM References ─────────────────────────────────────
     const entryCount   = document.getElementById('entry-count');
     const emptyState   = document.getElementById('empty-state');
     const csvTable     = document.getElementById('csv-table');
-    const csvTbody     = document.getElementById('csv-tbody');
-    const btnDownload  = document.getElementById('btn-download');
-    const themeToggle  = document.getElementById('theme-toggle');
+    const csvTbody      = document.getElementById('csv-tbody');
+    const btnDownload   = document.getElementById('btn-download');
+    const btnClearData  = document.getElementById('btn-clear-data');
+    const viewerActions = document.getElementById('viewer-actions');
+    const themeToggle   = document.getElementById('theme-toggle');
 
-    // ─── State ──────────────────────────────────────────────
     let lastRowCount = -1;
-
-    // ─── Helpers ────────────────────────────────────────────
 
     function escapeHtml(str) {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    function getStoredScans() {
+        try {
+            const rows = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            return Array.isArray(rows) ? rows : [];
+        } catch {
+            return [];
+        }
     }
 
     function applyTheme(theme) {
@@ -39,12 +42,6 @@
         } else if (theme === 'light') {
             document.documentElement.classList.add('light-theme');
             if (themeToggle) themeToggle.textContent = '🌙';
-        } else {
-            // system
-            if (themeToggle) {
-                const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                themeToggle.textContent = isDark ? '☀️' : '🌙';
-            }
         }
     }
 
@@ -59,96 +56,76 @@
         }
     }
 
-    // ─── Fetch & Render ─────────────────────────────────────
+    function fetchAndRender() {
+        const rows = getStoredScans();
+        const count = rows.length;
 
-    async function fetchAndRender() {
-        try {
-            const resp = await fetch(`${API_URL}?action=list&_t=${Date.now()}`);
-            if (!resp.ok) return;
-            const json = await resp.json();
+        if (count === lastRowCount) return;
+        lastRowCount = count;
 
-            const rows = json.rows || [];
-            const count = json.count || 0;
+        entryCount.textContent = `${count} ${count === 1 ? 'Entry' : 'Entries'}`;
 
-            // Skip re-render if nothing changed
-            if (count === lastRowCount) return;
-            lastRowCount = count;
-
-            entryCount.textContent = `${count} ${count === 1 ? 'Entry' : 'Entries'}`;
-
-            if (count === 0) {
-                emptyState.style.display = 'block';
-                csvTable.style.display = 'none';
-                btnDownload.style.display = 'none';
-                return;
-            }
-
-            emptyState.style.display = 'none';
-            csvTable.style.display = 'table';
-            btnDownload.style.display = 'block';
-
-            // Build table body — newest first
-            csvTbody.innerHTML = '';
-            const reversed = [...rows].reverse();
-            reversed.forEach((row, i) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="col-row">${count - i}</td>
-                    <td class="col-serial">${escapeHtml(row.serial)}</td>
-                    <td>${escapeHtml(row.timestamp)}</td>
-                `;
-                csvTbody.appendChild(tr);
-            });
-
-        } catch (err) {
-            console.error('Failed to fetch CSV data:', err);
+        if (count === 0) {
+            emptyState.style.display = 'block';
+            csvTable.style.display = 'none';
+            if (viewerActions) viewerActions.style.display = 'none';
+            return;
         }
-    }
 
-    // ─── CSV Download ───────────────────────────────────────
+        emptyState.style.display = 'none';
+        csvTable.style.display = 'table';
+        if (viewerActions) viewerActions.style.display = 'flex';
+
+        csvTbody.innerHTML = '';
+        const reversed = [...rows].reverse();
+        reversed.forEach((row, i) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="col-row">${count - i}</td>
+                <td class="col-serial">${escapeHtml(row.serial)}</td>
+                <td>${escapeHtml(row.timestamp)}</td>
+            `;
+            csvTbody.appendChild(tr);
+        });
+    }
 
     function downloadCSV() {
-        // Build CSV content from the current table data
-        const link = document.createElement('a');
-        link.href = `${API_URL}?action=list&_t=${Date.now()}`;
+        const rows = getStoredScans();
+        if (!rows.length) {
+            alert('No local scans to download yet.');
+            return;
+        }
 
-        // Fetch JSON and convert to CSV blob
-        fetch(`${API_URL}?action=list`)
-            .then(r => r.json())
-            .then(json => {
-                const rows = json.rows || [];
-                let csv = 'SerialNumber,Timestamp\n';
-                rows.forEach(row => {
-                    // Escape quotes in serial numbers
-                    const serial = row.serial.replace(/"/g, '""');
-                    csv += `"${serial}","${row.timestamp}"\n`;
-                });
+        let csv = 'SerialNumber,Timestamp\n';
+        rows.forEach(row => {
+            const serial = String(row.serial || '').replace(/"/g, '""');
+            const timestamp = String(row.timestamp || '').replace(/"/g, '""');
+            csv += `"${serial}","${timestamp}"\n`;
+        });
 
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `serials_${new Date().toISOString().slice(0, 10)}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            })
-            .catch(err => {
-                console.error('Download failed:', err);
-                alert('Failed to download CSV. Please try again.');
-            });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `serials_local_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
-    // ─── Event Listeners ────────────────────────────────────
+    function clearData() {
+        if (!confirm('Are you sure you want to delete all scanned serial numbers from this device? This cannot be undone.')) return;
+        localStorage.removeItem(STORAGE_KEY);
+        lastRowCount = -1;
+        fetchAndRender();
+    }
 
     btnDownload.addEventListener('click', downloadCSV);
+    if (btnClearData) btnClearData.addEventListener('click', clearData);
     if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
-    // ─── Start Polling ──────────────────────────────────────
-
     applyTheme(localStorage.getItem('theme'));
-    fetchAndRender(); // initial load
+    fetchAndRender();
     setInterval(fetchAndRender, POLL_INTERVAL);
-
 })();
