@@ -748,6 +748,114 @@ nav.top-nav a:hover {
     :root:not(.dark-theme) .alert-info { color: #1e40af; background: #dbeafe; border-color: #93c5fd; }
 }
 
+/* ─── Partial Serial Alert ────────────────────────────── */
+.alert-partial {
+    background: var(--warning-bg);
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+.dark-theme .alert-partial,
+:root:not(.light-theme) .alert-partial {
+    color: #fbbf24;
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not(.dark-theme) .alert-partial { color: #92400e; }
+}
+
+/* ─── Recent List Actions ─────────────────────────────── */
+.recent-list li {
+    flex-wrap: wrap;
+}
+
+.recent-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.recent-actions .btn-icon {
+    background: none;
+    border: 1px solid var(--gray-300);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    color: var(--gray-700);
+    line-height: 1;
+    transition: all .15s ease;
+}
+
+.recent-actions .btn-icon:hover {
+    background: var(--gray-100);
+}
+
+.recent-actions .btn-icon.btn-icon-danger:hover {
+    background: var(--danger-bg);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* ─── Table Row Actions ───────────────────────────────── */
+.csv-table .col-actions {
+    width: 90px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.row-actions {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.row-actions .btn-icon {
+    background: none;
+    border: 1px solid var(--gray-300);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    color: var(--gray-700);
+    line-height: 1;
+    transition: all .15s ease;
+}
+
+.row-actions .btn-icon:hover {
+    background: var(--gray-100);
+}
+
+.row-actions .btn-icon.btn-icon-danger:hover {
+    background: var(--danger-bg);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* ─── Inline Edit Input ───────────────────────────────── */
+.inline-edit-input {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    border: 2px solid var(--primary);
+    border-radius: 6px;
+    background: var(--input-bg);
+    color: var(--gray-900);
+    outline: none;
+}
+
+/* ─── Auto-resume flash ──────────────────────────────── */
+.save-flash {
+    animation: flash-success 1.5s ease;
+}
+
+@keyframes flash-success {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
 /* ─── Responsive ──────────────────────────────────────── */
 @media (max-width: 360px) {
     .container {

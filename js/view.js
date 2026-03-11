@@ -34,6 +34,35 @@
         }
     }
 
+    function setStoredScans(rows) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+    }
+
+    function overwriteMostRecentMatching(oldSerial, newSerial) {
+        const rows = getStoredScans();
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].serial === oldSerial) {
+                rows[i].serial = newSerial;
+                rows[i].timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                setStoredScans(rows);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function removeMostRecentMatching(serial) {
+        const rows = getStoredScans();
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].serial === serial) {
+                rows.splice(i, 1);
+                setStoredScans(rows);
+                return true;
+            }
+        }
+        return false;
+    }
+
     function applyTheme(theme) {
         document.documentElement.classList.remove('dark-theme', 'light-theme');
         if (theme === 'dark') {
@@ -84,6 +113,12 @@
                 <td class="col-row">${count - i}</td>
                 <td class="col-serial">${escapeHtml(row.serial)}</td>
                 <td>${escapeHtml(row.timestamp)}</td>
+                <td class="col-actions">
+                    <span class="row-actions">
+                        <button class="btn-icon" data-action="edit" data-serial="${escapeHtml(row.serial)}" title="Overwrite">✏️</button>
+                        <button class="btn-icon btn-icon-danger" data-action="delete" data-serial="${escapeHtml(row.serial)}" title="Remove">🗑️</button>
+                    </span>
+                </td>
             `;
             csvTbody.appendChild(tr);
         });
@@ -124,6 +159,36 @@
     btnDownload.addEventListener('click', downloadCSV);
     if (btnClearData) btnClearData.addEventListener('click', clearData);
     if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+
+    if (csvTbody) csvTbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+
+        const serial = btn.getAttribute('data-serial') || '';
+        const action = btn.getAttribute('data-action');
+
+        if (action === 'edit') {
+            const updated = prompt('Overwrite serial number:', serial);
+            if (!updated || !updated.trim()) return;
+            const newSerial = updated.trim();
+            const ok = overwriteMostRecentMatching(serial, newSerial);
+            if (ok) {
+                lastRowCount = -1;
+                fetchAndRender();
+            }
+            return;
+        }
+
+        if (action === 'delete') {
+            const confirmed = confirm(`Remove serial "${serial}"?`);
+            if (!confirmed) return;
+            const ok = removeMostRecentMatching(serial);
+            if (ok) {
+                lastRowCount = -1;
+                fetchAndRender();
+            }
+        }
+    });
 
     applyTheme(localStorage.getItem('theme'));
     fetchAndRender();

@@ -28,6 +28,7 @@
     const detectedSerial    = document.getElementById('detected-serial');
     const alertLowConf      = document.getElementById('alert-low-confidence');
     const alertUnreadable   = document.getElementById('alert-unreadable');
+    const alertPartial      = document.getElementById('alert-partial');
     const alertDupeInline   = document.getElementById('alert-duplicate-inline');
     const alertSuccess      = document.getElementById('alert-success');
     const alertSuccessText  = document.getElementById('alert-success-text');
@@ -57,7 +58,7 @@
     function showFlex(el) { if (el) { el.classList.add('visible'); el.style.display = 'flex'; } }
 
     function hideAllAlerts() {
-        hide(alertLowConf); hide(alertUnreadable); hide(alertSuccess); hide(alertDupeInline);
+        hide(alertLowConf); hide(alertUnreadable); hide(alertSuccess); hide(alertDupeInline); hide(alertPartial);
     }
 
     function escapeHtml(str) {
@@ -91,15 +92,60 @@
         return { success: true, timestamp };
     }
 
+    function overwriteLocalSerial(oldSerial, newSerial) {
+        const rows = getStoredScans();
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].serial === oldSerial) {
+                rows[i].serial = newSerial;
+                rows[i].timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                setStoredScans(rows);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function deleteLocalSerial(serial) {
+        const rows = getStoredScans();
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].serial === serial) {
+                rows.splice(i, 1);
+                setStoredScans(rows);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function renderRecentList() {
+        recentList.innerHTML = '';
+
+        if (!sessionScans.length) {
+            const li = document.createElement('li');
+            li.className = 'empty-state';
+            li.textContent = 'No scans yet. Point your camera at a serial number.';
+            recentList.appendChild(li);
+            return;
+        }
+
+        sessionScans.forEach((scan, idx) => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <span class="recent-serial">${escapeHtml(scan.serial)}</span>
+                <span class="recent-time">${scan.time}</span>
+                <span class="recent-actions">
+                    <button class="btn-icon" data-action="edit" data-index="${idx}" title="Overwrite">✏️</button>
+                    <button class="btn-icon btn-icon-danger" data-action="delete" data-index="${idx}" title="Remove">🗑️</button>
+                </span>
+            `;
+            recentList.appendChild(li);
+        });
+    }
+
     function addToRecentList(serial) {
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         sessionScans.unshift({ serial, time: timeStr });
-        recentList.innerHTML = '';
-        sessionScans.forEach(scan => {
-            const li = document.createElement('li');
-            li.innerHTML = `<span class="recent-serial">${escapeHtml(scan.serial)}</span><span class="recent-time">${scan.time}</span>`;
-            recentList.appendChild(li);
-        });
+        renderRecentList();
     }
 
     function extractSerial(rawText) {
@@ -112,7 +158,10 @@
         }
         const result = bestLine || rawText.trim();
         const cleanLen = result.replace(/[^a-zA-Z0-9]/g, '').length;
-        return { text: result, isValid: cleanLen >= MIN_SERIAL_LEN };
+        const density = result.length ? (cleanLen / result.length) : 0;
+        const isValid = cleanLen >= MIN_SERIAL_LEN;
+        const isPartial = isValid && (cleanLen < 6 || density < 0.55);
+        return { text: result, isValid, isPartial, cleanLen, density };
     }
 
     function applyTheme(theme) {
@@ -206,13 +255,13 @@
 
         try {
             const { data } = await ocrWorker.recognize(frame);
-            const { text: serial, isValid } = extractSerial((data.text || '').trim());
+            const { text: serial, isValid, isPartial } = extractSerial((data.text || '').trim());
             const confidence = data.confidence || 0;
 
             if (isValid && serial) {
                 if (serial === lastDetected) stableCount++; else { lastDetected = serial; stableCount = 1; }
                 viewfinderStatus.textContent = `Reading: ${serial} (${Math.round(confidence)}%)`;
-                if (stableCount >= STABLE_HITS) await presentResult(serial, confidence);
+                if (stableCount >= STABLE_HITS) await presentResult(serial, confidence, isPartial);
             } else {
                 lastDetected = '';
                 stableCount = 0;
@@ -259,7 +308,7 @@
         actionButtons.appendChild(resetBtn);
     }
 
-    async function presentResult(serial, confidence) {
+    async function presentResult(serial, confidence, isPartial) {
         scanningPaused = true;
         stopScanLoop();
         scanRegion.classList.remove('scanning');
@@ -270,6 +319,19 @@
         hideAllAlerts();
         show(resultSection);
         detectedSerial.textContent = serial;
+
+        // Partial serial — force manual input, do not autosave
+        if (isPartial) {
+            showFlex(alertPartial);
+            show(overrideSection);
+            overrideInput.value = serial;
+            overrideInput.focus();
+            overrideInput.select();
+            restoreActionButtons();
+            const saveBtn = actionButtons.querySelector('#btn-save');
+            if (saveBtn) { saveBtn.disabled = false; }
+            return;
+        }
 
         if (checkDuplicateLocal(serial)) {
             showFlex(alertDupeInline);
@@ -334,15 +396,14 @@
             hide(overrideSection);
             alertSuccessText.textContent = `"${serial}" saved locally!`;
             showFlex(alertSuccess);
+            alertSuccess.classList.add('save-flash');
             addToRecentList(serial);
 
-            actionButtons.innerHTML = '';
-            const againBtn = document.createElement('button');
-            againBtn.className = 'btn btn-primary';
-            againBtn.style.width = '100%';
-            againBtn.textContent = '📷 Scan Another';
-            againBtn.addEventListener('click', resetAndResume);
-            actionButtons.appendChild(againBtn);
+            // Auto-advance to next scan (no manual button required)
+            setTimeout(() => {
+                alertSuccess.classList.remove('save-flash');
+                resetAndResume();
+            }, 900);
         } else {
             if (saveBtn) { saveBtn.innerHTML = 'Save to CSV'; saveBtn.disabled = false; }
             const span = alertUnreadable.querySelector('span:last-child');
@@ -363,10 +424,10 @@
         try {
             const { data } = await ocrWorker.recognize(imageSource);
             hide(progressSection);
-            const { text: serial, isValid } = extractSerial((data.text || '').trim());
+            const { text: serial, isValid, isPartial } = extractSerial((data.text || '').trim());
             const confidence = data.confidence || 0;
             if (isValid && serial) {
-                await presentResult(serial, confidence);
+                await presentResult(serial, confidence, isPartial);
             } else {
                 show(resultSection);
                 detectedSerial.textContent = serial || '(unable to read)';
@@ -401,6 +462,41 @@
     if (overrideInput) overrideInput.addEventListener('input', () => {
         const saveBtn = actionButtons.querySelector('#btn-save') || actionButtons.querySelector('.btn-success');
         if (saveBtn) saveBtn.disabled = overrideInput.value.trim() === '' && !pendingSerial;
+    });
+
+    if (recentList) recentList.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+
+        const idx = Number(btn.getAttribute('data-index'));
+        if (Number.isNaN(idx) || !sessionScans[idx]) return;
+
+        const scan = sessionScans[idx];
+        const action = btn.getAttribute('data-action');
+
+        if (action === 'edit') {
+            const updated = prompt('Overwrite serial number:', scan.serial);
+            if (!updated || !updated.trim()) return;
+            const newSerial = updated.trim();
+
+            const ok = overwriteLocalSerial(scan.serial, newSerial);
+            if (ok) {
+                sessionScans[idx].serial = newSerial;
+                renderRecentList();
+            }
+            return;
+        }
+
+        if (action === 'delete') {
+            const confirmed = confirm(`Remove serial "${scan.serial}"?`);
+            if (!confirmed) return;
+
+            const ok = deleteLocalSerial(scan.serial);
+            if (ok) {
+                sessionScans.splice(idx, 1);
+                renderRecentList();
+            }
+        }
     });
     if (modalBtnDupe) modalBtnDupe.addEventListener('click', async () => {
         hide(duplicateModal);
