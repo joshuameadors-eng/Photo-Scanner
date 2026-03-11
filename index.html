@@ -5,15 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0a0a0a">
     <title>Serial Scanner</title>
     <link rel="stylesheet" href="css/style.css">
+    <!-- Apply saved theme immediately to prevent flash -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.classList.add('dark-theme');
+            else if (t === 'light') document.documentElement.classList.add('light-theme');
+        })();
+    </script>
 </head>
 <body>
     <div class="container">
 
         <!-- Header -->
         <header>
-            <h1>📷 Serial Scanner</h1>
+            <div class="header-row">
+                <h1>📷 Serial Scanner</h1>
+                <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">🌙</button>
+            </div>
             <p>Scan serial numbers to the shared CSV</p>
         </header>
 
@@ -23,30 +35,38 @@
             <a href="view.html">View CSV</a>
         </nav>
 
-        <!-- Capture Card -->
+        <!-- Live Camera Card -->
         <div class="card">
-            <h2>📸 Capture Serial Number</h2>
+            <h2>📸 Live Scanner</h2>
             <div class="capture-area">
-                <label class="capture-btn" for="file-input">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                        <circle cx="12" cy="13" r="4"/>
-                    </svg>
-                    Tap to Take Photo
-                </label>
-                <input type="file" id="file-input" accept="image/*" capture="environment">
-
-                <!-- Image Preview -->
-                <div class="preview-wrapper" id="preview-wrapper">
-                    <img id="preview-img" src="" alt="Captured image">
+                <!-- Live video viewfinder -->
+                <div class="viewfinder-wrapper" id="viewfinder-wrapper">
+                    <video id="camera-video" autoplay playsinline muted></video>
+                    <canvas id="camera-canvas"></canvas>
+                    <div class="viewfinder-overlay">
+                        <div class="scan-region" id="scan-region"></div>
+                    </div>
+                    <div class="viewfinder-status" id="viewfinder-status">Starting camera…</div>
                 </div>
 
-                <!-- OCR Progress -->
+                <!-- Camera error fallback -->
+                <div class="camera-error" id="camera-error" style="display:none;">
+                    <span class="error-icon">📷</span>
+                    <span id="camera-error-msg">Camera access denied. Please allow camera permissions.</span>
+                    <button class="btn btn-primary" id="btn-retry-camera" style="width:auto;">Retry Camera</button>
+                    <!-- Fallback file input -->
+                    <label class="capture-btn" for="file-input" style="margin-top:8px;">
+                        📁 Or Upload an Image
+                    </label>
+                    <input type="file" id="file-input" accept="image/*" capture="environment">
+                </div>
+
+                <!-- OCR Progress (shown during initial load) -->
                 <div class="progress-section" id="progress-section">
                     <div class="progress-bar-track">
                         <div class="progress-bar-fill" id="progress-bar"></div>
                     </div>
-                    <p class="progress-label" id="progress-label">Initializing OCR…</p>
+                    <p class="progress-label" id="progress-label">Loading OCR engine…</p>
                 </div>
             </div>
         </div>
@@ -59,13 +79,19 @@
             <!-- Low Confidence Warning -->
             <div class="alert alert-warning" id="alert-low-confidence">
                 <span class="alert-icon">⚠️</span>
-                <span>Low confidence read. Please verify or manually enter the serial number below.</span>
+                <span>Low confidence — please verify the serial number. Edit below if needed.</span>
             </div>
 
             <!-- Unreadable Warning -->
             <div class="alert alert-danger" id="alert-unreadable">
                 <span class="alert-icon">❌</span>
-                <span>Unable to read the serial number. Please enter it manually below.</span>
+                <span>Unable to read any text. Please enter the serial number manually.</span>
+            </div>
+
+            <!-- Duplicate Warning (inline) -->
+            <div class="alert alert-info" id="alert-duplicate-inline" style="display:none;">
+                <span class="alert-icon">🔁</span>
+                <span>This serial number already exists in the CSV.</span>
             </div>
 
             <!-- Success Alert -->
@@ -86,7 +112,7 @@
                     Save to CSV
                 </button>
                 <button class="btn btn-outline" id="btn-reset">
-                    Scan Again
+                    Resume Scanning
                 </button>
             </div>
         </div>
@@ -95,7 +121,7 @@
         <div class="card">
             <h2>📋 Recent Scans (This Session)</h2>
             <ul class="recent-list" id="recent-list">
-                <li class="empty-state">No scans yet. Capture a serial number above.</li>
+                <li class="empty-state">No scans yet. Point your camera at a serial number.</li>
             </ul>
         </div>
 

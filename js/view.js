@@ -13,11 +13,12 @@
     const POLL_INTERVAL = 3000; // milliseconds
 
     // ─── DOM References ─────────────────────────────────────
-    const entryCount  = document.getElementById('entry-count');
-    const emptyState  = document.getElementById('empty-state');
-    const csvTable    = document.getElementById('csv-table');
-    const csvTbody    = document.getElementById('csv-tbody');
-    const btnDownload = document.getElementById('btn-download');
+    const entryCount   = document.getElementById('entry-count');
+    const emptyState   = document.getElementById('empty-state');
+    const csvTable     = document.getElementById('csv-table');
+    const csvTbody     = document.getElementById('csv-tbody');
+    const btnDownload  = document.getElementById('btn-download');
+    const themeToggle  = document.getElementById('theme-toggle');
 
     // ─── State ──────────────────────────────────────────────
     let lastRowCount = -1;
@@ -28,6 +29,34 @@
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    function applyTheme(theme) {
+        document.documentElement.classList.remove('dark-theme', 'light-theme');
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark-theme');
+            if (themeToggle) themeToggle.textContent = '☀️';
+        } else if (theme === 'light') {
+            document.documentElement.classList.add('light-theme');
+            if (themeToggle) themeToggle.textContent = '🌙';
+        } else {
+            // system
+            if (themeToggle) {
+                const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                themeToggle.textContent = isDark ? '☀️' : '🌙';
+            }
+        }
+    }
+
+    function toggleTheme() {
+        const root = document.documentElement;
+        if (root.classList.contains('dark-theme')) {
+            localStorage.setItem('theme', 'light');
+            applyTheme('light');
+        } else {
+            localStorage.setItem('theme', 'dark');
+            applyTheme('dark');
+        }
     }
 
     // ─── Fetch & Render ─────────────────────────────────────
@@ -114,9 +143,11 @@
     // ─── Event Listeners ────────────────────────────────────
 
     btnDownload.addEventListener('click', downloadCSV);
+    if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
     // ─── Start Polling ──────────────────────────────────────
 
+    applyTheme(localStorage.getItem('theme'));
     fetchAndRender(); // initial load
     setInterval(fetchAndRender, POLL_INTERVAL);
 
